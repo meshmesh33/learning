@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: ${PIM_DB_URL:jdbc:postgresql://localhost:5432/pim}?currentSchema=e2e_it
+  flyway:
+    schemas: e2e_it
+    default-schema: e2e_it
+
+pim:
+  outbox:
+    relay-enabled: false
+  retention:
+    enabled: false

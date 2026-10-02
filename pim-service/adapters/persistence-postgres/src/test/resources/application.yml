@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: ${PIM_DB_URL:jdbc:postgresql://localhost:5432/pim}?currentSchema=persistence_it
+    username: ${PIM_DB_USER:postgres}
+    password: ${PIM_DB_PASSWORD:postgres}
+  flyway:
+    schemas: persistence_it
+    default-schema: persistence_it

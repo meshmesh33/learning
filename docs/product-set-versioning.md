@@ -1,7 +1,8 @@
 # Product set versioning in PIM
 
-Stack: Java / Spring Boot, PostgreSQL, Kafka.
-Implementation: [`pim-service/`](../pim-service).
+Stack: Java 21 / Spring Boot, PostgreSQL, Kafka, Gradle.
+Implementation: [`pim-service/`](../pim-service), a hexagonal multi-module build (see its README for the module map,
+dependency rules and clean-code choices).
 
 ## Problem
 
@@ -28,6 +29,18 @@ outbox_event              written in the same transaction as country_version, re
 A **version** stores no attribute data at all. It is a list of pointers: one template revision plus one
 variation revision per variation key.
 
+### Where this lives in the hexagon
+
+The domain (`ProductSetVersion`) models a version as **whole content**: a template plus a map of variations.
+It knows nothing about revisions, hashes or manifests. Structural sharing is purely a storage optimisation inside
+`adapters/persistence-postgres`:
+
+- `RevisionStore` turns attributes into canonical JSON, hashes them, and inserts the row only if it's absent.
+- `PostgresProductSetVersionRepository.update()` rewrites only the manifest pointers that changed.
+
+So you could switch to option 1 (a full JSONB snapshot per version) by replacing one adapter, without touching
+the domain, use cases or API.
+
 ### Why it is storage-efficient
 
 Changing the price of M in a 3-variation t-shirt:
@@ -45,7 +58,8 @@ value, the old revision row is reused and nothing new is stored (`ON CONFLICT DO
 - **Read a version**: two indexed queries (version + template, then manifest JOIN variation_revision). No replay, unlike delta storage.
 - **Read what a country sells**: one primary-key lookup on `country_version`, then the same snapshot read.
 - **Open a draft**: copies pointer rows only (`INSERT … SELECT`), so it's O(#variations) regardless of attribute size.
-- **Diff two versions**: compares revision ids and loads no JSON (`VersionDiff`).
+- **Diff two versions**: `ProductSetVersion.diffTo` compares attribute values in memory. If versions get very
+  large, an adapter-level query could compare revision ids instead and load no JSON.
 - Hot-path indexes: `country_version` PK, `(product_set_id, version_no)` unique, a partial index for the latest approved version,
   and a partial unique index for "one draft per set".
 
@@ -60,23 +74,24 @@ openDraft (copies v1 pointers) ─► v2 DRAFT ──edit*──► approve ─�
 
 | Rule | How it is enforced |
 |---|---|
-| Only one open draft per product set | partial unique index `WHERE status='DRAFT'` + `SELECT … FOR UPDATE` on `product_set` |
-| Two editors can't overwrite each other | `lock_version` optimistic lock: `UPDATE … WHERE lock_version = ?` → 409 |
-| Approved versions are immutable | service checks, plus DB triggers as a safety net |
-| Drafts never reach the consumer | events are produced **only** by `publish()`, which requires `APPROVED` |
-| Country pointer and event can't diverge | pointer upsert and `outbox_event` insert share one DB transaction |
+| Only one open draft per product set | `OpenDraftService` locks the product set (`findAndLock`), plus a partial unique index `WHERE status='DRAFT'` |
+| Two editors can't overwrite each other | `verifyLockVersion` in the domain, plus `UPDATE … WHERE lock_version = ?` in the adapter → `StaleVersionException` → 409 |
+| Approved versions are immutable | `ProductSetVersion.requireDraft()`, plus DB triggers as a safety net |
+| Drafts never reach the consumer | only `ProductSetVersion.publishTo()` creates the event, and it requires `APPROVED` |
+| Country pointer and event can't diverge | `PublishVersionService` runs in one transaction; the event port is a transactional outbox |
 
 Approval and publication are deliberately separate steps. This allows staged rollouts (EG first, then SA) and
 **rollback** (point EG back at v1, which is just another publish).
 
 ## Event to the customer-facing service
 
-`ProductSetPublishedEvent`, topic `pim.product-set.published`, Kafka key = `productSetId`:
+`ProductSetPublishedMessage` (the wire contract, mapped from the domain event `ProductSetVersionPublished`),
+topic `pim.product-set.published`, Kafka key = `productSetId`:
 
 ```json
 {
   "eventId": "…", "publishSeq": 42,
-  "productSetId": "…", "versionId": 7, "versionNo": 2,
+  "productSetId": "…", "versionId": "…", "versionNo": 2,
   "countries": ["EG"],
   "template":   { "name": "Basic tee", "material": "cotton", … },
   "variations": { "S": {…}, "M": {…}, "L": {…} }
@@ -105,7 +120,8 @@ relay safely. When throughput grows, you can replace the poller with Debezium CD
 
 ## Retention
 
-`ProductVersionRepository.purgeDiscarded(olderThan)` does the following:
+`PurgeDiscardedDraftsUseCase` (scheduled by `bootstrap/RetentionJob`, default: keep 30 days) calls
+`PostgresVersionRetentionRepository`, which does the following:
 
 1. Deletes `DISCARDED` drafts older than the cut-off.
 2. Deletes `variation_revision` and `template_revision` rows that no version references any more, again only if they're older than the cut-off.

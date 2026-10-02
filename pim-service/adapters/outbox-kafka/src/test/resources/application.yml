@@ -1,0 +1,8 @@
+spring:
+  datasource:
+    url: ${PIM_DB_URL:jdbc:postgresql://localhost:5432/pim}?currentSchema=outbox_it
+    username: ${PIM_DB_USER:postgres}
+    password: ${PIM_DB_PASSWORD:postgres}
+  flyway:
+    schemas: outbox_it
+    default-schema: outbox_it

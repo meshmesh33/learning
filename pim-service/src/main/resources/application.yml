@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: pim-service
+  datasource:
+    url: ${PIM_DB_URL:jdbc:postgresql://localhost:5432/pim}
+    username: ${PIM_DB_USER:postgres}
+    password: ${PIM_DB_PASSWORD:postgres}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+
+pim:
+  outbox:
+    relay-enabled: true
+    topic: pim.product-set.published
+    batch-size: 100
+    poll-interval-ms: 1000

@@ -3,6 +3,7 @@
 Stack: Java 21 / Spring Boot, PostgreSQL, Kafka, Gradle.
 Implementation: [`pim-service/`](../pim-service), a hexagonal multi-module build (see its README for the module map,
 dependency rules and clean-code choices).
+Diagrams (component, flow chart, state machines, class, sequence, database schema): [`architecture.md`](architecture.md).
 
 ## Problem
 

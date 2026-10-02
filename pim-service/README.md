@@ -2,7 +2,8 @@
 
 Versioned product sets (template + variations) where each country serves its own approved version.
 It's built as a **hexagonal (ports & adapters)** Gradle multi-module project.
-The storage design and its rationale are in [`docs/product-set-versioning.md`](../docs/product-set-versioning.md).
+The storage design and its rationale are in [`docs/product-set-versioning.md`](../docs/product-set-versioning.md);
+the diagrams are in [`docs/architecture.md`](../docs/architecture.md).
 
 ## Modules
 

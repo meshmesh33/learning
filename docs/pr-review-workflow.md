@@ -79,7 +79,7 @@ State is kept **in the PR itself** through hidden HTML markers, with no database
 
 ### Option A: scheduled cloud session, automatic (no API key, no secrets)
 
-A scheduled task starts a fresh Claude Code cloud session **every hour**, on your Claude subscription.
+A scheduled task wakes a Claude Code cloud session (one with this repo attached) **every hour**, on your Claude subscription.
 Each run checks the open PRs and does review / verify / discuss as needed. See
 [`.github/claude-review/cloud-session.md`](../.github/claude-review/cloud-session.md).
 

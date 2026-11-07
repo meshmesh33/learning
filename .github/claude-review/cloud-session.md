@@ -40,7 +40,14 @@ session are posted as the connected GitHub account (yours). So when the PR autho
 - put the verdict in the body and the summary: `**Verdict:** ✅ Would approve` or
   `**Verdict:** ❌ Changes requested`.
 
-## Scheduled run (every hour, fresh session)
+## Scheduled run (every hour)
+
+The scheduled task fires **into the Claude Code session that created it**, which already has this repo
+attached and GitHub access. A task set to start a *fresh* session per run starts with no repository and
+can't reach GitHub (the first test run failed this way). If that session is archived, recreate the
+scheduled task from claude.ai/code → Scheduled tasks with this repository selected, or from a new
+session on this repo.
+
 
 1. Make sure the review instructions are present. If `.github/claude-review/` is missing on the default
    branch, check it out from the setup branch:

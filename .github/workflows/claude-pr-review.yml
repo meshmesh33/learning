@@ -1,0 +1,158 @@
+# Claude PR review
+#
+# Flow:
+#   PR opened / ready      -> full review (5 aspects) -> inline + overall comments -> REQUEST_CHANGES or APPROVE
+#   reviewee pushes commit -> verify: check each open finding against the new code,
+#                             reply Fixed / Not fixed on its thread, resolve fixed threads,
+#                             review only the new changes, then APPROVE or REQUEST_CHANGES
+#   reviewee replies on a finding thread -> Claude answers (accepts justification or explains why it still applies)
+#   "/claude-review" comment by a maintainer -> forces a fresh full review
+#
+# Setup: see docs/pr-review-workflow.md
+
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Full review / verification of fixes
+  # ---------------------------------------------------------------------------
+  review:
+    if: >-
+      (github.event_name == 'pull_request'
+        && !github.event.pull_request.draft
+        && github.event.pull_request.user.type != 'Bot')
+      || (github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && startsWith(github.event.comment.body, '/claude-review')
+        && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      # A new push cancels the review of the previous commit.
+      group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ env.PR }}/head
+          fetch-depth: 0
+
+      - name: Decide mode (review vs verify)
+        id: mode
+        run: |
+          set -euo pipefail
+          read -r BASE_SHA HEAD_SHA < <(gh pr view "$PR" --repo "$REPO" --json baseRefOid,headRefOid --jq '"\(.baseRefOid) \(.headRefOid)"')
+
+          # The sticky summary comment carries the last reviewed commit:
+          #   <!-- claude-review:summary sha=<40 hex> -->
+          LAST_SHA=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                       --jq '.[] | select(.body | contains("<!-- claude-review:summary")) | .body' \
+                     | grep -oP 'claude-review:summary sha=\K[0-9a-f]{40}' | tail -1 || true)
+
+          MODE=review
+          SINCE_SHA=""
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -n "$LAST_SHA" ]; then
+            MODE=verify
+            # Incremental diff only if the last reviewed commit is still in history (no force-push/rebase).
+            if git merge-base --is-ancestor "$LAST_SHA" "$HEAD_SHA" 2>/dev/null; then
+              SINCE_SHA="$LAST_SHA"
+            fi
+            if [ "$LAST_SHA" = "$HEAD_SHA" ]; then MODE=skip; fi
+          fi
+
+          echo "mode=$MODE"           >> "$GITHUB_OUTPUT"
+          echo "base_sha=$BASE_SHA"   >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA"   >> "$GITHUB_OUTPUT"
+          echo "since_sha=$SINCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "Mode: $MODE (base=$BASE_SHA head=$HEAD_SHA since=${SINCE_SHA:-none})"
+
+      - name: Claude review
+        if: steps.mode.outputs.mode != 'skip'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Using a Claude subscription instead of an API key? Replace the line above with:
+          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            MODE: ${{ steps.mode.outputs.mode }}
+            REPO: ${{ env.REPO }}
+            PR_NUMBER: ${{ env.PR }}
+            BASE_SHA: ${{ steps.mode.outputs.base_sha }}
+            HEAD_SHA: ${{ steps.mode.outputs.head_sha }}
+            SINCE_SHA: ${{ steps.mode.outputs.since_sha }}
+
+            Read and follow `.github/claude-review/${{ steps.mode.outputs.mode }}.md` exactly.
+            Every comment you post must follow `.github/claude-review/comment-format.md`.
+            The severity rules and approval policy are in `.github/claude-review/policy.md`.
+          claude_args: >-
+            --max-turns 120
+            --allowedTools "Read,Write,Glob,Grep,Agent,Task,TodoWrite,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr comment:*),Bash(gh issue view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git blame:*),Bash(jq:*),Bash(cat:*),Bash(mktemp:*)"
+
+  # ---------------------------------------------------------------------------
+  # Reviewee replied to one of Claude's finding threads
+  # ---------------------------------------------------------------------------
+  discuss:
+    if: >-
+      github.event_name == 'pull_request_review_comment'
+      && github.event.comment.in_reply_to_id
+      && github.event.comment.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: claude-discuss-${{ github.event.comment.id }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Is this a Claude finding thread?
+        id: thread
+        run: |
+          parent=$(gh api "repos/$REPO/pulls/comments/${{ github.event.comment.in_reply_to_id }}" --jq .body)
+          if printf '%s' "$parent" | grep -q '<!-- claude-review:finding'; then
+            echo "is_claude=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR head
+        if: steps.thread.outputs.is_claude == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ env.PR }}/head
+          fetch-depth: 0
+
+      - name: Claude reply
+        if: steps.thread.outputs.is_claude == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            MODE: discuss
+            REPO: ${{ env.REPO }}
+            PR_NUMBER: ${{ env.PR }}
+            ROOT_COMMENT_ID: ${{ github.event.comment.in_reply_to_id }}
+            REPLY_COMMENT_ID: ${{ github.event.comment.id }}
+
+            Read and follow `.github/claude-review/discuss.md` exactly.
+            Format rules: `.github/claude-review/comment-format.md`. Policy: `.github/claude-review/policy.md`.
+          claude_args: >-
+            --max-turns 40
+            --allowedTools "Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"

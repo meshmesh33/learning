@@ -68,25 +68,38 @@ Full spec: [`.github/claude-review/comment-format.md`](../.github/claude-review/
 | `.github/claude-review/policy.md` | Severity, confidence bar, approval rules, requirement sources |
 | `.github/claude-review/comment-format.md` | Exact comment/summary formats and hidden markers |
 | `.claude/agents/*-reviewer.md` | The five specialist subagents (Java/Spring/JPA/Kafka checklists) |
+| `.github/claude-review/cloud-session.md` | How the hourly cloud session runs the review (default) |
 | `.claude/commands/review-pr.md` | `/review-pr <n>` to run the same review locally (dry run by default) |
 
 State is kept **in the PR itself** through hidden HTML markers, with no database:
 `claude-review:finding` (each finding), `claude-review:verdict` (each fix check) and
 `claude-review:summary sha=…` (last reviewed commit).
 
-## One-time setup
+## How it runs
 
-1. **Install the Claude GitHub App** on the repo: <https://github.com/apps/claude>
-   (or run `/install-github-app` in Claude Code locally, which does steps 1–2 for you).
-2. **Add a secret** under Settings → Secrets and variables → Actions:
-   - `ANTHROPIC_API_KEY` (API key from console.anthropic.com), **or**
-   - `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`, for Pro/Max plans). Then switch the
-     commented line in the workflow.
-3. **Allow Actions to approve PRs:** Settings → Actions → General → Workflow permissions →
-   tick **"Allow GitHub Actions to create and approve pull requests"**. Without it Claude can still
-   comment and request changes, but its approval is posted as a plain comment.
-4. Optional, for branch protection: require 1 approving review. Claude's approval comes from
-   `github-actions[bot]`. Add human reviewers too if you want a person to sign off.
+### Default: scheduled Claude Code cloud session (no API key, no secrets)
+
+A scheduled task starts a fresh Claude Code cloud session **every hour**, on your Claude subscription.
+Each run checks the open PRs and does review / verify / discuss as needed. See
+[`.github/claude-review/cloud-session.md`](../.github/claude-review/cloud-session.md).
+
+- Reaction time: up to ~1 hour after a PR is opened or a fix is pushed.
+- Comments are posted as **your** GitHub account. On PRs you opened yourself, GitHub does not allow
+  self-approval or self-"request changes", so the review is posted as a comment with
+  `Verdict: ✅ Would approve` / `❌ Changes requested`.
+- Manage the task (pause, change frequency, delete) under scheduled tasks at claude.ai/code.
+
+### Optional: GitHub Actions
+
+`.github/workflows/claude-pr-review.yml` reacts within minutes and posts as a bot (so it can
+approve your own PRs). It stays idle until you add a secret:
+
+1. Install the Claude GitHub App on the repo: <https://github.com/apps/claude>.
+2. On a computer, run `claude setup-token` (Pro/Max plan, **not** an API key) and save the printed
+   token as the repo secret `CLAUDE_CODE_OAUTH_TOKEN`.
+3. Settings → Actions → General → Workflow permissions → tick
+   **"Allow GitHub Actions to create and approve pull requests"**.
+4. Pause the scheduled task so the two don't both review.
 
 ## Writing PRs that get good requirement checks
 

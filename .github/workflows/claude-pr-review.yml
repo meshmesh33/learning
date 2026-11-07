@@ -9,6 +9,10 @@
 #   "/claude-review" comment by a maintainer -> forces a fresh full review
 #
 # Setup: see docs/pr-review-workflow.md
+#
+# OPTIONAL: this workflow is idle until the CLAUDE_CODE_OAUTH_TOKEN secret exists (steps skip, no failures).
+# The default setup runs the same review from a scheduled Claude Code cloud session instead
+# (.github/claude-review/cloud-session.md), which needs no secret.
 
 name: Claude PR Review
 
@@ -46,6 +50,7 @@ jobs:
       group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
     env:
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number || github.event.issue.number }}
@@ -86,12 +91,10 @@ jobs:
           echo "Mode: $MODE (base=$BASE_SHA head=$HEAD_SHA since=${SINCE_SHA:-none})"
 
       - name: Claude review
-        if: steps.mode.outputs.mode != 'skip'
+        if: steps.mode.outputs.mode != 'skip' && env.HAS_TOKEN == 'true'
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # Using a Claude subscription instead of an API key? Replace the line above with:
-          # claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             MODE: ${{ steps.mode.outputs.mode }}
             REPO: ${{ env.REPO }}
@@ -120,6 +123,7 @@ jobs:
     concurrency:
       group: claude-discuss-${{ github.event.comment.id }}
     env:
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
@@ -140,10 +144,10 @@ jobs:
           fetch-depth: 0
 
       - name: Claude reply
-        if: steps.thread.outputs.is_claude == 'true'
+        if: steps.thread.outputs.is_claude == 'true' && env.HAS_TOKEN == 'true'
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
             MODE: discuss
             REPO: ${{ env.REPO }}

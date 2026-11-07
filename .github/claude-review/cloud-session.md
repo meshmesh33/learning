@@ -1,5 +1,14 @@
 # Running the review from a Claude Code cloud session
 
+Two options, both on your Claude subscription with no API key:
+
+| | Option A: Scheduled (automatic) | Option B: Watch (on demand) |
+|---|---|---|
+| Starts | by itself, every hour | you ask in a Claude Code session: `Review PR #12 and watch it` |
+| Which PRs | every open PR **without** the `claude-watch` label | only PRs you ask for (they get the `claude-watch` label) |
+| Reacts to a push or reply | at the next hourly run (≤ 1 h) | within about a minute (GitHub events wake the session) |
+| Stops | when you pause or delete the scheduled task | when the PR is merged or closed, or you say `stop watching #12` |
+
 The review can run without GitHub Actions or any API key: a scheduled Claude Code cloud session
 runs every hour on your Claude subscription. It uses the same `review.md`, `verify.md`, `discuss.md`,
 `policy.md`, `comment-format.md` and the `.claude/agents/*` reviewers.
@@ -36,7 +45,8 @@ session are posted as the connected GitHub account (yours). So when the PR autho
 1. Make sure the review instructions are present. If `.github/claude-review/` is missing on the default
    branch, check it out from the setup branch:
    `git fetch origin ccr-f07a4a65-grvw2o && git checkout origin/ccr-f07a4a65-grvw2o -- .github/claude-review .claude`
-2. List open PRs (`list_pull_requests`, state `open`). Skip drafts and PRs by bots.
+2. List open PRs (`list_pull_requests`, state `open`). Skip drafts, PRs by bots, and PRs with the
+   label `claude-watch` (those are handled live by Option B below).
 3. For each PR decide what to do:
 
    | State | Action |
@@ -51,3 +61,19 @@ session are posted as the connected GitHub account (yours). So when the PR autho
    stop (no duplicate reviews).
 5. End with a 1–3 line report: which PRs were reviewed or verified, and the open finding counts.
    Do not commit, push or modify code.
+
+## Option B: watch a PR live (on demand)
+
+Trigger: a user in a Claude Code cloud session on this repo says e.g. `Review PR #12 and watch it`.
+
+1. Add the label `claude-watch` to the PR (`issue_write`, method `update`, labels including the
+   existing ones) so Option A skips it.
+2. Run **review** mode now (or **verify** if a summary already exists), exactly as in the table above.
+3. Call `subscribe_pr_activity` for the PR and end the turn. No polling.
+4. On each GitHub event that wakes the session:
+   - new commits (`synchronize` / push) → **verify** mode;
+   - a human reply on a `claude-review:finding` thread → **discuss** mode;
+   - a `/claude-review` comment → **review** mode;
+   - anything else (CI, bot comments, Claude's own comments) → do nothing.
+5. When the PR is merged or closed, or the user says stop: `unsubscribe_pr_activity` and remove the
+   `claude-watch` label (if the PR is still open, Option A takes over again).

@@ -89,6 +89,13 @@ Each run checks the open PRs and does review / verify / discuss as needed. See
   `Verdict: ✅ Would approve` / `❌ Changes requested`.
 - Manage the task (pause, change frequency, delete) under scheduled tasks at claude.ai/code.
 
+### Option B: watch a PR live from a cloud session
+
+In any Claude Code cloud session on this repo, say **`Review PR #12 and watch it`**. Claude reviews
+it right away, labels it `claude-watch` (so Option A skips it), and reacts within about a minute to
+every push and every reply until the PR is merged or closed, or you say `stop watching #12`.
+Details: `.github/claude-review/cloud-session.md`.
+
 ### Optional: GitHub Actions
 
 `.github/workflows/claude-pr-review.yml` reacts within minutes and posts as a bot (so it can

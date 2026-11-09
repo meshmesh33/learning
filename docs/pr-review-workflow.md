@@ -68,7 +68,7 @@ Full spec: [`.github/claude-review/comment-format.md`](../.github/claude-review/
 | `.github/claude-review/policy.md` | Severity, confidence bar, approval rules, requirement sources |
 | `.github/claude-review/comment-format.md` | Exact comment/summary formats and hidden markers |
 | `.claude/agents/*-reviewer.md` | The five specialist subagents (Java/Spring/JPA/Kafka checklists) |
-| `.github/claude-review/cloud-session.md` | How the hourly cloud session runs the review (default) |
+| `.github/claude-review/cloud-session.md` | How the daily cloud session runs the review (default) |
 | `.claude/commands/review-pr.md` | `/review-pr <n>` to run the same review locally (dry run by default) |
 
 State is kept **in the PR itself** through hidden HTML markers, with no database:
@@ -79,11 +79,11 @@ State is kept **in the PR itself** through hidden HTML markers, with no database
 
 ### Option A: scheduled cloud session, automatic (no API key, no secrets)
 
-A scheduled task wakes a Claude Code cloud session (one with this repo attached) **every hour**, on your Claude subscription.
+A scheduled task wakes a Claude Code cloud session (one with this repo attached) **once a day**, on your Claude subscription.
 Each run checks the open PRs and does review / verify / discuss as needed. See
 [`.github/claude-review/cloud-session.md`](../.github/claude-review/cloud-session.md).
 
-- Reaction time: up to ~1 hour after a PR is opened or a fix is pushed.
+- Reaction time: up to ~24 hours after a PR is opened or a fix is pushed.
 - Comments are posted as **your** GitHub account. On PRs you opened yourself, GitHub does not allow
   self-approval or self-"request changes", so the review is posted as a comment with
   `Verdict: ✅ Would approve` / `❌ Changes requested`.

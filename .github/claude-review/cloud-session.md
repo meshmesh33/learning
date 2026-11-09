@@ -4,13 +4,13 @@ Two options, both on your Claude subscription with no API key:
 
 | | Option A: Scheduled (automatic) | Option B: Watch (on demand) |
 |---|---|---|
-| Starts | by itself, every hour | you ask in a Claude Code session: `Review PR #12 and watch it` |
+| Starts | by itself, once a day | you ask in a Claude Code session: `Review PR #12 and watch it` |
 | Which PRs | every open PR **without** the `claude-watch` label | only PRs you ask for (they get the `claude-watch` label) |
-| Reacts to a push or reply | at the next hourly run (≤ 1 h) | within about a minute (GitHub events wake the session) |
+| Reacts to a push or reply | at the next daily run (up to 24 h) | within about a minute (GitHub events wake the session) |
 | Stops | when you pause or delete the scheduled task | when the PR is merged or closed, or you say `stop watching #12` |
 
 The review can run without GitHub Actions or any API key: a scheduled Claude Code cloud session
-runs every hour on your Claude subscription. It uses the same `review.md`, `verify.md`, `discuss.md`,
+runs once a day on your Claude subscription. It uses the same `review.md`, `verify.md`, `discuss.md`,
 `policy.md`, `comment-format.md` and the `.claude/agents/*` reviewers.
 
 ## Differences from the Actions workflow
@@ -40,7 +40,7 @@ session are posted as the connected GitHub account (yours). So when the PR autho
 - put the verdict in the body and the summary: `**Verdict:** ✅ Would approve` or
   `**Verdict:** ❌ Changes requested`.
 
-## Scheduled run (every hour)
+## Scheduled run (once a day)
 
 The scheduled task fires **into the Claude Code session that created it**, which already has this repo
 attached and GitHub access. A task set to start a *fresh* session per run starts with no repository and
